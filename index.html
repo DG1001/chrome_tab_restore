@@ -412,7 +412,8 @@
 
             setupEventListeners() {
                 // File selection
-                this.selectBtn.addEventListener('click', () => this.handleSelectClick());
+                // Prevent bubbling from the button to the upload area, which caused two dialogs
+                this.selectBtn.addEventListener('click', (e) => { e.stopPropagation(); this.handleSelectClick(); });
                 this.uploadArea.addEventListener('click', () => this.handleSelectClick());
                 this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
