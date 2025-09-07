@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrome Tabs Recovery</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .upload-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 12px;
+            padding: 60px 40px;
+            background: #fafafa;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            border-color: #4285f4;
+            background: #f0f7ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #34a853;
+            background: #f0fff4;
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            color: #ddd;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .btn:hover {
+            background: #3367d6;
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .processing {
+            display: none;
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4285f4;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results {
+            display: none;
+        }
+
+        .stats {
+            background: #e8f0fe;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #1a73e8;
+        }
+
+        .stat-label {
+            color: #5f6368;
+            margin-top: 5px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #4285f4;
+        }
+
+        .url-grid {
+            display: grid;
+            gap: 15px;
+        }
+
+        .url-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .url-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .url-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #1a73e8;
+            text-decoration: none;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .url-title:hover {
+            text-decoration: underline;
+        }
+
+        .url-domain {
+            color: #5f6368;
+            font-size: 0.9em;
+            word-break: break-all;
+        }
+
+        .url-meta {
+            font-size: 0.8em;
+            color: #137333;
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 30px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+
+        .log-success { color: #137333; }
+        .log-warning { color: #ea8600; }
+        .log-error { color: #d73027; }
+        .log-info { color: #1967d2; }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 8px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .upload-area {
+                padding: 40px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔄 Chrome Tabs Recovery</h1>
+            <p>Recover your lost Chrome tabs from the tabs file</p>
+        </div>
+
+        <div class="content">
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">
+                        <strong>Drop Chrome tabs file here</strong><br>
+                        or click to select
+                    </div>
+                    <button class="btn" onclick="document.getElementById('fileInput').click()">
+                        Choose File
+                    </button>
+                    <input type="file" id="fileInput" class="file-input" accept=".tabs,.*">
+                </div>
+                <div style="margin-top: 20px; color: #666; font-size: 0.9em;">
+                    <strong>Path to tabs file:</strong><br>
+                    Windows: <code>C:\Users\[Username]\AppData\Local\Google\Chrome\User Data\Default\tabs</code><br>
+                    Alternative: <code>C:\Users\[Username]\AppData\Local\Google\Chrome\User Data\Default\Sessions\tabs_*</code><br>
+                    Mac: <code>~/Library/Application Support/Google/Chrome/Default/tabs</code><br>
+                    Linux: <code>~/.config/google-chrome/Default/tabs</code>
+                </div>
+            </div>
+
+            <div class="processing" id="processing">
+                <div class="spinner"></div>
+                <p>Processing tabs file...</p>
+            </div>
+
+            <div class="results" id="results">
+                <div class="stats" id="stats"></div>
+                
+                <div class="controls">
+                    <input type="text" class="search-input" id="searchInput" placeholder="Search URLs...">
+                    <button class="btn" onclick="openAllTabs()">Open All</button>
+                    <button class="btn" onclick="exportBookmarks()">Export Bookmarks</button>
+                    <button class="btn" onclick="exportJson()">Export JSON</button>
+                </div>
+
+                <div class="url-grid" id="urlGrid"></div>
+                
+                <div class="export-buttons">
+                    <button class="btn" onclick="downloadResults()">Download Results</button>
+                </div>
+
+                <div class="log" id="log"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let extractedUrls = [];
+        let processedStats = {};
+
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const processing = document.getElementById('processing');
+        const results = document.getElementById('results');
+        const log = document.getElementById('log');
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        });
+
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        function addLog(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function extractUrlsFromContent(content) {
+            const urls = [];
+            
+            addLog('Starting URL extraction from binary data...', 'info');
+            
+            const text = new TextDecoder('utf-8', { ignoreBOM: true, fatal: false }).decode(content);
+            
+            const urlPatterns = [
+                /https?:\/\/[^\s\x00-\x1f\x7f-\x9f"<>{}|\\^`\[\]]+/g,
+                /tps:\/\/[^\s\x00-\x1f\x7f-\x9f"<>{}|\\^`\[\]]+/g,
+            ];
+
+            for (const pattern of urlPatterns) {
+                const matches = text.match(pattern) || [];
+                for (let match of matches) {
+                    if (match.startsWith('tps://')) {
+                        match = 'https://' + match.substring(6);
+                    } else if (match.startsWith('ttp://')) {
+                        match = 'http://' + match.substring(6);
+                    }
+                    
+                    match = match.replace(/[^\w\-._~:/?#[\]@!$&'()*+,;=%]+$/, '');
+                    
+                    if (match.length > 10 && match.includes('.')) {
+                        urls.push(match);
+                    }
+                }
+            }
+
+            const cleanText = text.replace(/[^\w\-._:/\?=#&]/g, ' ');
+            const domainPattern = /[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?(?:\/[^\s]*)*/g;
+            const domainMatches = cleanText.match(domainPattern) || [];
+            
+            for (const domain of domainMatches) {
+                if (domain.includes('.') && domain.length > 4 && !domain.startsWith('http')) {
+                    const potentialUrl = `https://${domain}`;
+                    if (!urls.some(url => url.includes(domain))) {
+                        urls.push(potentialUrl);
+                    }
+                }
+            }
+
+            addLog(`${urls.length} raw URLs found`, 'success');
+            return urls;
+        }
+
+        function isValidUrl(url) {
+            try {
+                const parsed = new URL(url);
+                const domain = parsed.hostname.toLowerCase();
+                
+                if (
+                    domain.length > 100 ||
+                    /^[0-9a-f\-]{30,}/.test(domain) ||
+                    /^[A-Za-z0-9+/=]{50,}/.test(domain) ||
+                    domain.endsWith('apps.googleusercontent') ||
+                    domain.endsWith('scf.usercontent.goog') ||
+                    /^[0-9][A-Za-z0-9+/=]{20,}/.test(domain) ||
+                    domain.length < 4 ||
+                    !domain.includes('.') ||
+                    domain.startsWith('eyjh') ||
+                    domain.includes('..') ||
+                    /[^a-z0-9\-.]/.test(domain)
+                ) {
+                    return false;
+                }
+                
+                const parts = domain.split('.');
+                const tld = parts[parts.length - 1];
+                if (tld.length < 2 || /[^a-z]/.test(tld)) {
+                    return false;
+                }
+                
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        function cleanAndDeduplicateUrls(urls) {
+            addLog('Starting cleanup and deduplication...', 'info');
+            
+            const uniqueUrls = [...new Set(urls)];
+            addLog(`After duplicate removal: ${uniqueUrls.length} URLs`, 'info');
+            
+            const validUrls = uniqueUrls.filter(url => {
+                const valid = isValidUrl(url);
+                if (!valid) {
+                    addLog(`Removing invalid URL: ${url.substring(0, 50)}...`, 'warning');
+                }
+                return valid;
+            });
+            addLog(`After validation: ${validUrls.length} URLs`, 'info');
+            
+            const domainGroups = {};
+            
+            for (const url of validUrls) {
+                try {
+                    const parsed = new URL(url);
+                    const domain = parsed.hostname.toLowerCase().replace(/^www\./, '');
+                    
+                    if (!domainGroups[domain]) {
+                        domainGroups[domain] = [];
+                    }
+                    domainGroups[domain].push(url);
+                } catch {
+                    continue;
+                }
+            }
+            
+            const resultUrls = [];
+            for (const [domain, domainUrls] of Object.entries(domainGroups)) {
+                if (domainUrls.length === 1) {
+                    resultUrls.push({
+                        url: domainUrls[0],
+                        domain: domain,
+                        title: domain.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                        groupSize: 1
+                    });
+                } else {
+                    const bestUrl = domainUrls.reduce((a, b) => a.length > b.length ? a : b);
+                    resultUrls.push({
+                        url: bestUrl,
+                        domain: domain,
+                        title: domain.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                        groupSize: domainUrls.length,
+                        alternatives: domainUrls
+                    });
+                    addLog(`Domain ${domain}: ${domainUrls.length} URLs, best selected`, 'info');
+                }
+            }
+            
+            const finalUrls = [];
+            const processedDomains = new Set();
+            
+            const sortedUrls = resultUrls.sort((a, b) => b.domain.length - a.domain.length);
+            
+            let removedCount = 0;
+            for (const urlData of sortedUrls) {
+                const currentDomain = urlData.domain;
+                
+                let isSubstring = false;
+                for (const processedDomain of processedDomains) {
+                    if (currentDomain !== processedDomain && processedDomain.includes(currentDomain)) {
+                        isSubstring = true;
+                        addLog(`Removing incomplete domain: ${currentDomain}`, 'warning');
+                        removedCount++;
+                        break;
+                    }
+                }
+                
+                if (!isSubstring) {
+                    finalUrls.push(urlData);
+                    processedDomains.add(currentDomain);
+                }
+            }
+            
+            addLog(`${removedCount} incomplete domains removed`, 'success');
+            addLog(`Final count: ${finalUrls.length} URLs`, 'success');
+            
+            return finalUrls;
+        }
+
+        async function processFile(file) {
+            addLog(`Processing file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`, 'info');
+            
+            document.querySelector('.upload-section').style.display = 'none';
+            processing.style.display = 'block';
+            results.style.display = 'none';
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const rawUrls = extractUrlsFromContent(arrayBuffer);
+                
+                if (rawUrls.length === 0) {
+                    throw new Error('No URLs found in file');
+                }
+                
+                extractedUrls = cleanAndDeduplicateUrls(rawUrls);
+                
+                processedStats = {
+                    totalRaw: rawUrls.length,
+                    totalFinal: extractedUrls.length,
+                    reductionPercent: ((rawUrls.length - extractedUrls.length) / rawUrls.length * 100).toFixed(1)
+                };
+                
+                displayResults();
+                
+            } catch (error) {
+                addLog(`Error processing file: ${error.message}`, 'error');
+                document.querySelector('.upload-section').style.display = 'block';
+            } finally {
+                processing.style.display = 'none';
+            }
+        }
+
+        function displayResults() {
+            results.style.display = 'block';
+            
+            const stats = document.getElementById('stats');
+            stats.innerHTML = `
+                <div class="stat-item">
+                    <div class="stat-number">${processedStats.totalRaw}</div>
+                    <div class="stat-label">Raw URLs Found</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">${processedStats.totalFinal}</div>
+                    <div class="stat-label">Clean URLs</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">${processedStats.reductionPercent}%</div>
+                    <div class="stat-label">Duplicates Removed</div>
+                </div>
+            `;
+            
+            displayUrls(extractedUrls);
+            addLog('Processing completed!', 'success');
+        }
+
+        function displayUrls(urls) {
+            const urlGrid = document.getElementById('urlGrid');
+            
+            if (urls.length === 0) {
+                urlGrid.innerHTML = '<p style="text-align: center; color: #666;">No URLs to display</p>';
+                return;
+            }
+            
+            urlGrid.innerHTML = urls.map(urlData => `
+                <div class="url-card">
+                    <a href="${urlData.url}" target="_blank" class="url-title">
+                        ${urlData.title}
+                    </a>
+                    <div class="url-domain">${urlData.url}</div>
+                    ${urlData.groupSize > 1 ? `<div class="url-meta">Best of ${urlData.groupSize} URLs for this domain</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function toggleAlternatives(index) {
+            const alternativesElement = document.getElementById(`alternatives-${index}`);
+            if (alternativesElement) {
+                alternativesElement.classList.toggle('expanded');
+            }
+        }
+
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filteredUrls = extractedUrls.filter(urlData => 
+                urlData.url.toLowerCase().includes(searchTerm) ||
+                urlData.domain.toLowerCase().includes(searchTerm) ||
+                urlData.title.toLowerCase().includes(searchTerm)
+            );
+            displayUrls(filteredUrls);
+        });
+
+        function openAllTabs() {
+            if (extractedUrls.length === 0) return;
+            
+            if (confirm(`Do you really want to open all ${extractedUrls.length} tabs? This might slow down your browser.`)) {
+                extractedUrls.forEach((urlData, index) => {
+                    setTimeout(() => {
+                        window.open(urlData.url, '_blank');
+                    }, index * 100);
+                });
+            }
+        }
+
+        function exportBookmarks() {
+            if (extractedUrls.length === 0) return;
+            
+            const bookmarksHtml = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+<DT><H3>Recovered Chrome Tabs</H3>
+<DL><p>
+${extractedUrls.map(urlData => `<DT><A HREF="${urlData.url}">${urlData.title}</A>`).join('\n')}
+</DL><p>
+</DL><p>`;
+            
+            downloadFile(bookmarksHtml, 'recovered_tabs_bookmarks.html', 'text/html');
+        }
+
+        function exportJson() {
+            if (extractedUrls.length === 0) return;
+            
+            const jsonData = {
+                exportDate: new Date().toISOString(),
+                stats: processedStats,
+                urls: extractedUrls
+            };
+            
+            downloadFile(JSON.stringify(jsonData, null, 2), 'recovered_tabs.json', 'application/json');
+        }
+
+        function downloadResults() {
+            if (extractedUrls.length === 0) return;
+            
+            const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Recovered Chrome Tabs</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .url-card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+        .url-title { color: #1a73e8; text-decoration: none; font-weight: bold; }
+        .url-domain { color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🔄 Recovered Chrome Tabs</h1>
+    <p><strong>Exported on:</strong> ${new Date().toLocaleString()}</p>
+    <p><strong>URLs Found:</strong> ${extractedUrls.length}</p>
+    
+    ${extractedUrls.map(urlData => `
+        <div class="url-card">
+            <a href="${urlData.url}" target="_blank" class="url-title">${urlData.title}</a>
+            <div class="url-domain">${urlData.url}</div>
+        </div>
+    `).join('')}
+</body>
+</html>`;
+            
+            downloadFile(htmlContent, 'recovered_tabs.html', 'text/html');
+        }
+
+        function downloadFile(content, filename, contentType) {
+            const blob = new Blob([content], { type: contentType });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
