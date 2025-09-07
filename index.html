@@ -73,6 +73,11 @@
             background: #f0fff4;
         }
 
+        .upload-area.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .upload-icon {
             font-size: 4em;
             color: #ddd;
@@ -222,6 +227,58 @@
             color: #137333;
             margin-top: 8px;
             font-style: italic;
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s ease;
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+        }
+
+        .url-meta:hover {
+            color: #0d8043;
+            background: #f0fff4;
+            border-color: #137333;
+        }
+
+        .url-alternatives {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid #137333;
+            max-height: 0;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .url-alternatives.expanded {
+            max-height: 300px;
+            padding: 10px;
+        }
+
+        .alternative-url {
+            font-size: 0.85em;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+            word-break: break-all;
+            border: 1px solid #e0e0e0;
+        }
+
+        .alternative-url:last-child {
+            margin-bottom: 0;
+        }
+
+        .alternative-url a {
+            color: #1967d2;
+            text-decoration: none;
+        }
+
+        .alternative-url a:hover {
+            text-decoration: underline;
         }
 
         .log {
@@ -285,16 +342,14 @@
         </div>
 
         <div class="content">
-            <div class="upload-section">
+            <div class="upload-section" id="uploadSection">
                 <div class="upload-area" id="uploadArea">
                     <div class="upload-icon">📁</div>
                     <div class="upload-text">
                         <strong>Drop Chrome tabs file here</strong><br>
                         or click to select
                     </div>
-                    <button class="btn" onclick="document.getElementById('fileInput').click()">
-                        Choose File
-                    </button>
+                    <button class="btn" id="selectBtn">Choose File</button>
                     <input type="file" id="fileInput" class="file-input" accept=".tabs,.*">
                 </div>
                 <div style="margin-top: 20px; color: #666; font-size: 0.9em;">
@@ -316,15 +371,16 @@
                 
                 <div class="controls">
                     <input type="text" class="search-input" id="searchInput" placeholder="Search URLs...">
-                    <button class="btn" onclick="openAllTabs()">Open All</button>
-                    <button class="btn" onclick="exportBookmarks()">Export Bookmarks</button>
-                    <button class="btn" onclick="exportJson()">Export JSON</button>
+                    <button class="btn" id="openAllBtn">Open All</button>
+                    <button class="btn" id="exportBookmarksBtn">Export Bookmarks</button>
+                    <button class="btn" id="exportJsonBtn">Export JSON</button>
                 </div>
 
                 <div class="url-grid" id="urlGrid"></div>
                 
                 <div class="export-buttons">
-                    <button class="btn" onclick="downloadResults()">Download Results</button>
+                    <button class="btn" id="downloadBtn">Download Results</button>
+                    <button class="btn" id="newFileBtn">Process Another File</button>
                 </div>
 
                 <div class="log" id="log"></div>
@@ -333,351 +389,429 @@
     </div>
 
     <script>
-        let extractedUrls = [];
-        let processedStats = {};
-
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
-        const processing = document.getElementById('processing');
-        const results = document.getElementById('results');
-        const log = document.getElementById('log');
-
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                processFile(files[0]);
+        class TabsRecovery {
+            constructor() {
+                this.extractedUrls = [];
+                this.processedStats = {};
+                this.isProcessing = false;
+                this.initializeElements();
+                this.setupEventListeners();
             }
-        });
 
-        uploadArea.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                processFile(e.target.files[0]);
+            initializeElements() {
+                this.uploadArea = document.getElementById('uploadArea');
+                this.uploadSection = document.getElementById('uploadSection');
+                this.fileInput = document.getElementById('fileInput');
+                this.selectBtn = document.getElementById('selectBtn');
+                this.processing = document.getElementById('processing');
+                this.results = document.getElementById('results');
+                this.log = document.getElementById('log');
+                this.urlGrid = document.getElementById('urlGrid');
+                this.searchInput = document.getElementById('searchInput');
             }
-        });
 
-        function addLog(message, type = 'info') {
-            const logEntry = document.createElement('div');
-            logEntry.className = `log-entry log-${type}`;
-            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            log.appendChild(logEntry);
-            log.scrollTop = log.scrollHeight;
-        }
+            setupEventListeners() {
+                // File selection
+                this.selectBtn.addEventListener('click', () => this.handleSelectClick());
+                this.uploadArea.addEventListener('click', () => this.handleSelectClick());
+                this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
-        function extractUrlsFromContent(content) {
-            const urls = [];
-            
-            addLog('Starting URL extraction from binary data...', 'info');
-            
-            const text = new TextDecoder('utf-8', { ignoreBOM: true, fatal: false }).decode(content);
-            
-            const urlPatterns = [
-                /https?:\/\/[^\s\x00-\x1f\x7f-\x9f"<>{}|\\^`\[\]]+/g,
-                /tps:\/\/[^\s\x00-\x1f\x7f-\x9f"<>{}|\\^`\[\]]+/g,
-            ];
+                // Drag and drop
+                this.uploadArea.addEventListener('dragover', (e) => this.handleDragOver(e));
+                this.uploadArea.addEventListener('dragleave', () => this.handleDragLeave());
+                this.uploadArea.addEventListener('drop', (e) => this.handleDrop(e));
 
-            for (const pattern of urlPatterns) {
-                const matches = text.match(pattern) || [];
-                for (let match of matches) {
-                    if (match.startsWith('tps://')) {
-                        match = 'https://' + match.substring(6);
-                    } else if (match.startsWith('ttp://')) {
-                        match = 'http://' + match.substring(6);
+                // Search
+                this.searchInput.addEventListener('input', (e) => this.handleSearch(e));
+
+                // Export buttons
+                document.getElementById('openAllBtn').addEventListener('click', () => this.openAllTabs());
+                document.getElementById('exportBookmarksBtn').addEventListener('click', () => this.exportBookmarks());
+                document.getElementById('exportJsonBtn').addEventListener('click', () => this.exportJson());
+                document.getElementById('downloadBtn').addEventListener('click', () => this.downloadResults());
+                document.getElementById('newFileBtn').addEventListener('click', () => this.resetForNewFile());
+
+                // URL alternatives toggle - using event delegation
+                document.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('url-meta')) {
+                        this.toggleAlternatives(e.target);
                     }
-                    
-                    match = match.replace(/[^\w\-._~:/?#[\]@!$&'()*+,;=%]+$/, '');
-                    
-                    if (match.length > 10 && match.includes('.')) {
-                        urls.push(match);
-                    }
-                }
-            }
-
-            const cleanText = text.replace(/[^\w\-._:/\?=#&]/g, ' ');
-            const domainPattern = /[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?(?:\/[^\s]*)*/g;
-            const domainMatches = cleanText.match(domainPattern) || [];
-            
-            for (const domain of domainMatches) {
-                if (domain.includes('.') && domain.length > 4 && !domain.startsWith('http')) {
-                    const potentialUrl = `https://${domain}`;
-                    if (!urls.some(url => url.includes(domain))) {
-                        urls.push(potentialUrl);
-                    }
-                }
-            }
-
-            addLog(`${urls.length} raw URLs found`, 'success');
-            return urls;
-        }
-
-        function isValidUrl(url) {
-            try {
-                const parsed = new URL(url);
-                const domain = parsed.hostname.toLowerCase();
-                
-                if (
-                    domain.length > 100 ||
-                    /^[0-9a-f\-]{30,}/.test(domain) ||
-                    /^[A-Za-z0-9+/=]{50,}/.test(domain) ||
-                    domain.endsWith('apps.googleusercontent') ||
-                    domain.endsWith('scf.usercontent.goog') ||
-                    /^[0-9][A-Za-z0-9+/=]{20,}/.test(domain) ||
-                    domain.length < 4 ||
-                    !domain.includes('.') ||
-                    domain.startsWith('eyjh') ||
-                    domain.includes('..') ||
-                    /[^a-z0-9\-.]/.test(domain)
-                ) {
-                    return false;
-                }
-                
-                const parts = domain.split('.');
-                const tld = parts[parts.length - 1];
-                if (tld.length < 2 || /[^a-z]/.test(tld)) {
-                    return false;
-                }
-                
-                return true;
-            } catch {
-                return false;
-            }
-        }
-
-        function cleanAndDeduplicateUrls(urls) {
-            addLog('Starting cleanup and deduplication...', 'info');
-            
-            const uniqueUrls = [...new Set(urls)];
-            addLog(`After duplicate removal: ${uniqueUrls.length} URLs`, 'info');
-            
-            const validUrls = uniqueUrls.filter(url => {
-                const valid = isValidUrl(url);
-                if (!valid) {
-                    addLog(`Removing invalid URL: ${url.substring(0, 50)}...`, 'warning');
-                }
-                return valid;
-            });
-            addLog(`After validation: ${validUrls.length} URLs`, 'info');
-            
-            const domainGroups = {};
-            
-            for (const url of validUrls) {
-                try {
-                    const parsed = new URL(url);
-                    const domain = parsed.hostname.toLowerCase().replace(/^www\./, '');
-                    
-                    if (!domainGroups[domain]) {
-                        domainGroups[domain] = [];
-                    }
-                    domainGroups[domain].push(url);
-                } catch {
-                    continue;
-                }
-            }
-            
-            const resultUrls = [];
-            for (const [domain, domainUrls] of Object.entries(domainGroups)) {
-                if (domainUrls.length === 1) {
-                    resultUrls.push({
-                        url: domainUrls[0],
-                        domain: domain,
-                        title: domain.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-                        groupSize: 1
-                    });
-                } else {
-                    const bestUrl = domainUrls.reduce((a, b) => a.length > b.length ? a : b);
-                    resultUrls.push({
-                        url: bestUrl,
-                        domain: domain,
-                        title: domain.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-                        groupSize: domainUrls.length,
-                        alternatives: domainUrls
-                    });
-                    addLog(`Domain ${domain}: ${domainUrls.length} URLs, best selected`, 'info');
-                }
-            }
-            
-            const finalUrls = [];
-            const processedDomains = new Set();
-            
-            const sortedUrls = resultUrls.sort((a, b) => b.domain.length - a.domain.length);
-            
-            let removedCount = 0;
-            for (const urlData of sortedUrls) {
-                const currentDomain = urlData.domain;
-                
-                let isSubstring = false;
-                for (const processedDomain of processedDomains) {
-                    if (currentDomain !== processedDomain && processedDomain.includes(currentDomain)) {
-                        isSubstring = true;
-                        addLog(`Removing incomplete domain: ${currentDomain}`, 'warning');
-                        removedCount++;
-                        break;
-                    }
-                }
-                
-                if (!isSubstring) {
-                    finalUrls.push(urlData);
-                    processedDomains.add(currentDomain);
-                }
-            }
-            
-            addLog(`${removedCount} incomplete domains removed`, 'success');
-            addLog(`Final count: ${finalUrls.length} URLs`, 'success');
-            
-            return finalUrls;
-        }
-
-        async function processFile(file) {
-            addLog(`Processing file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`, 'info');
-            
-            document.querySelector('.upload-section').style.display = 'none';
-            processing.style.display = 'block';
-            results.style.display = 'none';
-            
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const rawUrls = extractUrlsFromContent(arrayBuffer);
-                
-                if (rawUrls.length === 0) {
-                    throw new Error('No URLs found in file');
-                }
-                
-                extractedUrls = cleanAndDeduplicateUrls(rawUrls);
-                
-                processedStats = {
-                    totalRaw: rawUrls.length,
-                    totalFinal: extractedUrls.length,
-                    reductionPercent: ((rawUrls.length - extractedUrls.length) / rawUrls.length * 100).toFixed(1)
-                };
-                
-                displayResults();
-                
-            } catch (error) {
-                addLog(`Error processing file: ${error.message}`, 'error');
-                document.querySelector('.upload-section').style.display = 'block';
-            } finally {
-                processing.style.display = 'none';
-            }
-        }
-
-        function displayResults() {
-            results.style.display = 'block';
-            
-            const stats = document.getElementById('stats');
-            stats.innerHTML = `
-                <div class="stat-item">
-                    <div class="stat-number">${processedStats.totalRaw}</div>
-                    <div class="stat-label">Raw URLs Found</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-number">${processedStats.totalFinal}</div>
-                    <div class="stat-label">Clean URLs</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-number">${processedStats.reductionPercent}%</div>
-                    <div class="stat-label">Duplicates Removed</div>
-                </div>
-            `;
-            
-            displayUrls(extractedUrls);
-            addLog('Processing completed!', 'success');
-        }
-
-        function displayUrls(urls) {
-            const urlGrid = document.getElementById('urlGrid');
-            
-            if (urls.length === 0) {
-                urlGrid.innerHTML = '<p style="text-align: center; color: #666;">No URLs to display</p>';
-                return;
-            }
-            
-            urlGrid.innerHTML = urls.map(urlData => `
-                <div class="url-card">
-                    <a href="${urlData.url}" target="_blank" class="url-title">
-                        ${urlData.title}
-                    </a>
-                    <div class="url-domain">${urlData.url}</div>
-                    ${urlData.groupSize > 1 ? `<div class="url-meta">Best of ${urlData.groupSize} URLs for this domain</div>` : ''}
-                </div>
-            `).join('');
-        }
-
-        function toggleAlternatives(index) {
-            const alternativesElement = document.getElementById(`alternatives-${index}`);
-            if (alternativesElement) {
-                alternativesElement.classList.toggle('expanded');
-            }
-        }
-
-        document.getElementById('searchInput').addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            const filteredUrls = extractedUrls.filter(urlData => 
-                urlData.url.toLowerCase().includes(searchTerm) ||
-                urlData.domain.toLowerCase().includes(searchTerm) ||
-                urlData.title.toLowerCase().includes(searchTerm)
-            );
-            displayUrls(filteredUrls);
-        });
-
-        function openAllTabs() {
-            if (extractedUrls.length === 0) return;
-            
-            if (confirm(`Do you really want to open all ${extractedUrls.length} tabs? This might slow down your browser.`)) {
-                extractedUrls.forEach((urlData, index) => {
-                    setTimeout(() => {
-                        window.open(urlData.url, '_blank');
-                    }, index * 100);
                 });
             }
-        }
 
-        function exportBookmarks() {
-            if (extractedUrls.length === 0) return;
-            
-            const bookmarksHtml = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+            handleSelectClick() {
+                if (!this.isProcessing) {
+                    this.fileInput.click();
+                }
+            }
+
+            handleFileSelect(e) {
+                if (e.target.files.length > 0 && !this.isProcessing) {
+                    this.processFile(e.target.files[0]);
+                }
+            }
+
+            handleDragOver(e) {
+                e.preventDefault();
+                if (!this.isProcessing) {
+                    this.uploadArea.classList.add('dragover');
+                }
+            }
+
+            handleDragLeave() {
+                this.uploadArea.classList.remove('dragover');
+            }
+
+            handleDrop(e) {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+                if (!this.isProcessing && e.dataTransfer.files.length > 0) {
+                    this.processFile(e.dataTransfer.files[0]);
+                }
+            }
+
+            handleSearch(e) {
+                const searchTerm = e.target.value.toLowerCase();
+                const filteredUrls = this.extractedUrls.filter(urlData => 
+                    urlData.url.toLowerCase().includes(searchTerm) ||
+                    urlData.domain.toLowerCase().includes(searchTerm) ||
+                    urlData.title.toLowerCase().includes(searchTerm)
+                );
+                this.displayUrls(filteredUrls);
+            }
+
+            addLog(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${type}`;
+                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                this.log.appendChild(logEntry);
+                this.log.scrollTop = this.log.scrollHeight;
+            }
+
+            async processFile(file) {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                this.uploadArea.classList.add('disabled');
+                this.addLog(`Processing file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`, 'info');
+                
+                this.uploadSection.style.display = 'none';
+                this.processing.style.display = 'block';
+                this.results.style.display = 'none';
+                
+                // Clear file input
+                this.fileInput.value = '';
+                
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const rawUrls = this.extractUrlsFromContent(arrayBuffer);
+                    
+                    if (rawUrls.length === 0) {
+                        throw new Error('No URLs found in file');
+                    }
+                    
+                    this.extractedUrls = this.cleanAndDeduplicateUrls(rawUrls);
+                    
+                    this.processedStats = {
+                        totalRaw: rawUrls.length,
+                        totalFinal: this.extractedUrls.length,
+                        reductionPercent: ((rawUrls.length - this.extractedUrls.length) / rawUrls.length * 100).toFixed(1)
+                    };
+                    
+                    this.displayResults();
+                    
+                } catch (error) {
+                    this.addLog(`Error processing file: ${error.message}`, 'error');
+                    this.resetForNewFile();
+                } finally {
+                    this.processing.style.display = 'none';
+                    this.isProcessing = false;
+                    this.uploadArea.classList.remove('disabled');
+                }
+            }
+
+            extractUrlsFromContent(content) {
+                const urls = [];
+                this.addLog('Starting URL extraction from binary data...', 'info');
+                
+                const text = new TextDecoder('utf-8', { ignoreBOM: true, fatal: false }).decode(content);
+                
+                const urlPatterns = [
+                    /https?:\/\/[^\s\x00-\x1f\x7f-\x9f"<>{}|\\^`\[\]]+/g,
+                    /tps:\/\/[^\s\x00-\x1f\x7f-\x9f"<>{}|\\^`\[\]]+/g,
+                ];
+
+                for (const pattern of urlPatterns) {
+                    const matches = text.match(pattern) || [];
+                    for (let match of matches) {
+                        if (match.startsWith('tps://')) {
+                            match = 'https://' + match.substring(6);
+                        } else if (match.startsWith('ttp://')) {
+                            match = 'http://' + match.substring(6);
+                        }
+                        
+                        match = match.replace(/[^\w\-._~:/?#[\]@!$&'()*+,;=%]+$/, '');
+                        
+                        if (match.length > 10 && match.includes('.')) {
+                            urls.push(match);
+                        }
+                    }
+                }
+
+                const cleanText = text.replace(/[^\w\-._:/\?=#&]/g, ' ');
+                const domainPattern = /[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?(?:\/[^\s]*)*/g;
+                const domainMatches = cleanText.match(domainPattern) || [];
+                
+                for (const domain of domainMatches) {
+                    if (domain.includes('.') && domain.length > 4 && !domain.startsWith('http')) {
+                        const potentialUrl = `https://${domain}`;
+                        if (!urls.some(url => url.includes(domain))) {
+                            urls.push(potentialUrl);
+                        }
+                    }
+                }
+
+                this.addLog(`${urls.length} raw URLs found`, 'success');
+                return urls;
+            }
+
+            isValidUrl(url) {
+                try {
+                    const parsed = new URL(url);
+                    const domain = parsed.hostname.toLowerCase();
+                    
+                    if (
+                        domain.length > 100 ||
+                        /^[0-9a-f\-]{30,}/.test(domain) ||
+                        /^[A-Za-z0-9+/=]{50,}/.test(domain) ||
+                        domain.endsWith('apps.googleusercontent') ||
+                        domain.endsWith('scf.usercontent.goog') ||
+                        /^[0-9][A-Za-z0-9+/=]{20,}/.test(domain) ||
+                        domain.length < 4 ||
+                        !domain.includes('.') ||
+                        domain.startsWith('eyjh') ||
+                        domain.includes('..') ||
+                        /[^a-z0-9\-.]/.test(domain)
+                    ) {
+                        return false;
+                    }
+                    
+                    const parts = domain.split('.');
+                    const tld = parts[parts.length - 1];
+                    if (tld.length < 2 || /[^a-z]/.test(tld)) {
+                        return false;
+                    }
+                    
+                    return true;
+                } catch {
+                    return false;
+                }
+            }
+
+            cleanAndDeduplicateUrls(urls) {
+                this.addLog('Starting cleanup and deduplication...', 'info');
+                
+                const uniqueUrls = [...new Set(urls)];
+                this.addLog(`After duplicate removal: ${uniqueUrls.length} URLs`, 'info');
+                
+                const validUrls = uniqueUrls.filter(url => {
+                    const valid = this.isValidUrl(url);
+                    if (!valid) {
+                        this.addLog(`Removing invalid URL: ${url.substring(0, 50)}...`, 'warning');
+                    }
+                    return valid;
+                });
+                this.addLog(`After validation: ${validUrls.length} URLs`, 'info');
+                
+                const domainGroups = {};
+                
+                for (const url of validUrls) {
+                    try {
+                        const parsed = new URL(url);
+                        const domain = parsed.hostname.toLowerCase().replace(/^www\./, '');
+                        
+                        if (!domainGroups[domain]) {
+                            domainGroups[domain] = [];
+                        }
+                        domainGroups[domain].push(url);
+                    } catch {
+                        continue;
+                    }
+                }
+                
+                const resultUrls = [];
+                for (const [domain, domainUrls] of Object.entries(domainGroups)) {
+                    if (domainUrls.length === 1) {
+                        resultUrls.push({
+                            url: domainUrls[0],
+                            domain: domain,
+                            title: domain.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                            groupSize: 1
+                        });
+                    } else {
+                        const bestUrl = domainUrls.reduce((a, b) => a.length > b.length ? a : b);
+                        resultUrls.push({
+                            url: bestUrl,
+                            domain: domain,
+                            title: domain.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                            groupSize: domainUrls.length,
+                            alternatives: domainUrls
+                        });
+                        this.addLog(`Domain ${domain}: ${domainUrls.length} URLs, best selected`, 'info');
+                    }
+                }
+                
+                const finalUrls = [];
+                const processedDomains = new Set();
+                
+                const sortedUrls = resultUrls.sort((a, b) => b.domain.length - a.domain.length);
+                
+                let removedCount = 0;
+                for (const urlData of sortedUrls) {
+                    const currentDomain = urlData.domain;
+                    
+                    let isSubstring = false;
+                    for (const processedDomain of processedDomains) {
+                        if (currentDomain !== processedDomain && processedDomain.includes(currentDomain)) {
+                            isSubstring = true;
+                            this.addLog(`Removing incomplete domain: ${currentDomain}`, 'warning');
+                            removedCount++;
+                            break;
+                        }
+                    }
+                    
+                    if (!isSubstring) {
+                        finalUrls.push(urlData);
+                        processedDomains.add(currentDomain);
+                    }
+                }
+                
+                this.addLog(`${removedCount} incomplete domains removed`, 'success');
+                this.addLog(`Final count: ${finalUrls.length} URLs`, 'success');
+                
+                return finalUrls;
+            }
+
+            displayResults() {
+                this.results.style.display = 'block';
+                
+                const stats = document.getElementById('stats');
+                stats.innerHTML = `
+                    <div class="stat-item">
+                        <div class="stat-number">${this.processedStats.totalRaw}</div>
+                        <div class="stat-label">Raw URLs Found</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">${this.processedStats.totalFinal}</div>
+                        <div class="stat-label">Clean URLs</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">${this.processedStats.reductionPercent}%</div>
+                        <div class="stat-label">Duplicates Removed</div>
+                    </div>
+                `;
+                
+                this.displayUrls(this.extractedUrls);
+                this.addLog('Processing completed!', 'success');
+            }
+
+            displayUrls(urls) {
+                if (urls.length === 0) {
+                    this.urlGrid.innerHTML = '<p style="text-align: center; color: #666;">No URLs to display</p>';
+                    return;
+                }
+                
+                this.urlGrid.innerHTML = urls.map((urlData, index) => {
+                    const alternativesHtml = urlData.groupSize > 1 && urlData.alternatives ? 
+                        `<div class="url-alternatives" data-index="${index}">
+                            ${urlData.alternatives.map(altUrl => 
+                                `<div class="alternative-url">
+                                    <a href="${altUrl}" target="_blank">${altUrl}</a>
+                                </div>`
+                            ).join('')}
+                        </div>` : '';
+
+                    const metaHtml = urlData.groupSize > 1 ? 
+                        `<div class="url-meta" data-index="${index}" title="Click to show/hide alternative URLs">
+                            📋 Best of ${urlData.groupSize} URLs for this domain (click to expand)
+                        </div>` : '';
+
+                    return `
+                        <div class="url-card">
+                            <a href="${urlData.url}" target="_blank" class="url-title">
+                                ${urlData.title}
+                            </a>
+                            <div class="url-domain">${urlData.url}</div>
+                            ${metaHtml}
+                            ${alternativesHtml}
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            toggleAlternatives(metaElement) {
+                const index = metaElement.getAttribute('data-index');
+                const alternativesElement = document.querySelector(`[data-index="${index}"].url-alternatives`);
+                if (alternativesElement) {
+                    alternativesElement.classList.toggle('expanded');
+                }
+            }
+
+            resetForNewFile() {
+                this.uploadSection.style.display = 'block';
+                this.processing.style.display = 'none';
+                this.results.style.display = 'none';
+                this.isProcessing = false;
+                this.extractedUrls = [];
+                this.processedStats = {};
+                this.fileInput.value = '';
+            }
+
+            openAllTabs() {
+                if (this.extractedUrls.length === 0) return;
+                
+                if (confirm(`Do you really want to open all ${this.extractedUrls.length} tabs? This might slow down your browser.`)) {
+                    this.extractedUrls.forEach((urlData, index) => {
+                        setTimeout(() => {
+                            window.open(urlData.url, '_blank');
+                        }, index * 100);
+                    });
+                }
+            }
+
+            exportBookmarks() {
+                if (this.extractedUrls.length === 0) return;
+                
+                const bookmarksHtml = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
 <TITLE>Bookmarks</TITLE>
 <H1>Bookmarks</H1>
 <DL><p>
 <DT><H3>Recovered Chrome Tabs</H3>
 <DL><p>
-${extractedUrls.map(urlData => `<DT><A HREF="${urlData.url}">${urlData.title}</A>`).join('\n')}
+${this.extractedUrls.map(urlData => `<DT><A HREF="${urlData.url}">${urlData.title}</A>`).join('\n')}
 </DL><p>
 </DL><p>`;
-            
-            downloadFile(bookmarksHtml, 'recovered_tabs_bookmarks.html', 'text/html');
-        }
+                
+                this.downloadFile(bookmarksHtml, 'recovered_tabs_bookmarks.html', 'text/html');
+            }
 
-        function exportJson() {
-            if (extractedUrls.length === 0) return;
-            
-            const jsonData = {
-                exportDate: new Date().toISOString(),
-                stats: processedStats,
-                urls: extractedUrls
-            };
-            
-            downloadFile(JSON.stringify(jsonData, null, 2), 'recovered_tabs.json', 'application/json');
-        }
+            exportJson() {
+                if (this.extractedUrls.length === 0) return;
+                
+                const jsonData = {
+                    exportDate: new Date().toISOString(),
+                    stats: this.processedStats,
+                    urls: this.extractedUrls
+                };
+                
+                this.downloadFile(JSON.stringify(jsonData, null, 2), 'recovered_tabs.json', 'application/json');
+            }
 
-        function downloadResults() {
-            if (extractedUrls.length === 0) return;
-            
-            const htmlContent = `<!DOCTYPE html>
+            downloadResults() {
+                if (this.extractedUrls.length === 0) return;
+                
+                const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -692,9 +826,9 @@ ${extractedUrls.map(urlData => `<DT><A HREF="${urlData.url}">${urlData.title}</A
 <body>
     <h1>🔄 Recovered Chrome Tabs</h1>
     <p><strong>Exported on:</strong> ${new Date().toLocaleString()}</p>
-    <p><strong>URLs Found:</strong> ${extractedUrls.length}</p>
+    <p><strong>URLs Found:</strong> ${this.extractedUrls.length}</p>
     
-    ${extractedUrls.map(urlData => `
+    ${this.extractedUrls.map(urlData => `
         <div class="url-card">
             <a href="${urlData.url}" target="_blank" class="url-title">${urlData.title}</a>
             <div class="url-domain">${urlData.url}</div>
@@ -702,21 +836,25 @@ ${extractedUrls.map(urlData => `<DT><A HREF="${urlData.url}">${urlData.title}</A
     `).join('')}
 </body>
 </html>`;
-            
-            downloadFile(htmlContent, 'recovered_tabs.html', 'text/html');
+                
+                this.downloadFile(htmlContent, 'recovered_tabs.html', 'text/html');
+            }
+
+            downloadFile(content, filename, contentType) {
+                const blob = new Blob([content], { type: contentType });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }
         }
 
-        function downloadFile(content, filename, contentType) {
-            const blob = new Blob([content], { type: contentType });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-        }
+        // Initialize the application
+        new TabsRecovery();
     </script>
 </body>
 </html>
