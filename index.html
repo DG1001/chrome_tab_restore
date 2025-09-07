@@ -243,19 +243,22 @@
         }
 
         .url-alternatives {
-            margin-top: 10px;
-            padding: 10px;
-            background: #f8f9fa;
+            margin-top: 0;
+            padding: 0;
+            background: transparent;
             border-radius: 6px;
-            border-left: 3px solid #137333;
+            border-left: 0 solid #137333;
             max-height: 0;
             overflow: hidden;
-            transition: all 0.3s ease;
+            transition: max-height 0.3s ease, padding 0.3s ease, margin 0.3s ease, border-left-width 0.3s ease, background-color 0.3s ease;
         }
 
         .url-alternatives.expanded {
             max-height: 300px;
+            margin-top: 10px;
             padding: 10px;
+            background: #f8f9fa;
+            border-left-width: 3px;
         }
 
         .alternative-url {
